@@ -1,0 +1,87 @@
+name: release
+
+# Build and publish to Releases on every push to main. The version is the
+# Asia/Shanghai wall clock at build time as YYYYMMDD-HHMM, e.g. 20261127-1645.
+# Manual runs from the Actions tab take the same path.
+
+on:
+  push:
+    branches: [main]
+    # A release ships binaries, so a commit that only touches prose produces
+    # nothing worth shipping. Use "Run workflow" to force a release anyway.
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Serialise releases on main: two pushes in the same minute must not race for
+# the same tag. Queued runs wait instead of being cancelled.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history and tags, so --generate-notes can diff against the
+          # previous release.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
+              go build -trimpath -ldflags="-w -s" \
+              -o "dist/mitt-linux-$arch" ./cmd/mitt
+          done
+          file dist/mitt-linux-*
+          ( cd dist && sha256sum mitt-linux-* > SHA256SUMS && cat SHA256SUMS )
+
+      # The tag comes from the clock, so a second push inside the same minute
+      # would collide. On collision append -2, -3, ... so every run still gets
+      # its own release instead of failing.
+      - name: Compute tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base="$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)"
+          tag="$base"
+          n=1
+          while gh release view "$tag" >/dev/null 2>&1 \
+             || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; do
+            n=$((n + 1))
+            tag="${base}-${n}"
+          done
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release tag: $tag"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes
+          gh release view "$TAG" --json tagName,url,assets \
+            --jq '"released \(.tagName) -> \(.url)\nassets: " + ([.assets[].name] | join(", "))'
