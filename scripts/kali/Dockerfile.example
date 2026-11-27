@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+#
+# DOWNSTREAM REFERENCE ONLY — this file is not a mitt deliverable and is not
+# part of the mitt release process. It shows one way to bake the static mitt
+# binary and its Skill documentation into a Kali image.
+#
+# The resulting image contains a generated CA private key and the mitt skill
+# documentation under /root/.agents/skills/mitt/. Treat it as a
+# secret-bearing artifact and never push it to a public registry.
+#
+# Build from the repository root after `make build`:
+#   docker build -f scripts/kali/Dockerfile.example -t mitt-kali:local .
+#
+# Override the base only for local experiments:
+#   docker build --build-arg BASE_IMAGE=debian:bookworm-slim \
+#     -f scripts/kali/Dockerfile.example -t mitt-kali:local .
+
+ARG BASE_IMAGE=kalilinux/kali-rolling
+FROM ${BASE_IMAGE}
+
+# `mitt ca install` shells out to update-ca-certificates. The Kali rolling
+# base image does not ship ca-certificates by default. libnss3-tools provides
+# certutil so the NSS best-effort install path also runs.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates libnss3-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+# The static binary; its skill docs are embedded. Expand them into the skill
+# root that agents running as root discover by default (/root/.agents/skills).
+COPY mitt /usr/local/bin/mitt
+RUN mitt skills install
+
+# Generate and install the CA during the image build. `mitt ca init` prints
+# ca_key_pem to stdout; redirect it so the private key never lands in build
+# logs. The key remains at /root/.mitt/ca/ca.key.pem for containers started
+# from this image.
+RUN mitt ca init >/dev/null && mitt ca install
+
+WORKDIR /root
