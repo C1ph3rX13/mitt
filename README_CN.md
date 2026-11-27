@@ -41,7 +41,7 @@ mitt proxy start \
 
 ## 特性
 
-| | |
+| 能力 | 说明 |
 |---|---|
 | **抓包** | 正向代理 + HTTPS CONNECT MITM，支持 HTTP/1.1 与 HTTP/2（`--http2-alpn h2,h1`），多端口监听（`--port-range`） |
 | **保真** | 记录实际收发的原始字节；`show --raw` 原样吐出，不经过重新序列化 |

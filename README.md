@@ -41,7 +41,7 @@ mitt proxy start \
 
 ## Features
 
-| | |
+| Capability | What it does |
 |---|---|
 | **Capture** | Forward proxy with HTTPS CONNECT MITM; HTTP/1.1 and HTTP/2 (`--http2-alpn h2,h1`); multi-port listening (`--port-range`) |
 | **Fidelity** | Records the exact bytes sent and received; `show --raw` replays them verbatim without re-serialization |
